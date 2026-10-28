@@ -1,0 +1,33 @@
+# AGS 出口网关配置示例（方案 A）
+# secret 生成：openssl rand -base64 32
+# 必须与沙箱侧环境变量 AGS_SOCKS_SECRET 完全一致（同一个 base64 字符串）
+
+listen: ":1080"
+secret: "U2VjcmV0LU11c3QtQmUtY2hhbmdlZC1tZS0zMi1ieXRlcw=="
+max_skew_seconds: 300      # 时间戳容差，防重放
+max_conns_per_id: 64       # 每个沙箱 ID 的并发连接上限，0 = 不限
+audit_log: "/var/log/ags-egress-proxy-audit.log"   # 空=此默认路径；"-"/"stdout"=标准输出
+
+# 出口池：单一入口，按 ID 分发
+outlets:
+  - name: out-1            # 多出口 IP 机器：绑定源 IP 直连
+    type: local
+    bind_ip: "203.0.113.10"
+  - name: out-2            # 独立出口机器：再经一台后端 socks5
+    type: socks
+    address: "203.0.113.20:1080"
+    username: "gw-to-out2"
+    password: "backend-pass"
+  - name: out-3
+    type: local            # 不填 bind_ip = 用默认路由出口
+    bind_ip: ""
+
+# 路由规则：命中即绑定出口（先到先得）
+routes:
+  - id_prefix: "sbx-teamA"        # teamA 的沙箱固定走 out-1
+    outlet: out-1
+  - id_regex: "^sbx-cn-.*"        # cn 前缀沙箱走 out-3
+    outlet: out-3
+
+# 未命中规则的 ID：一致性哈希（同 ID 稳定落同一出口）或 round-robin
+default_strategy: "consistent-hash"
